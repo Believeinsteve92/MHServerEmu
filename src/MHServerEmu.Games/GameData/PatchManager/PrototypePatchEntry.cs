@@ -1,5 +1,6 @@
 ﻿using MHServerEmu.Core.Logging;
 using MHServerEmu.Core.VectorMath;
+using MHServerEmu.Games.GameData;
 using MHServerEmu.Games.GameData.Calligraphy;
 using MHServerEmu.Games.GameData.Prototypes;
 using MHServerEmu.Games.Properties;
@@ -77,15 +78,15 @@ namespace MHServerEmu.Games.GameData.PatchManager
         {
             using JsonDocument doc = JsonDocument.ParseValue(ref reader);
             var root = doc.RootElement;
-            string valueTypeString = root.GetProperty("ValueType").GetString();
+            string valueTypeString = root.GetProperty("ValueType").GetString() ?? string.Empty;
             valueTypeString = valueTypeString.Replace("[]", "Array");
             var valueType = Enum.Parse<ValueType>(valueTypeString);
             var entry = new PrototypePatchEntry
             (
                 root.GetProperty("Enabled").GetBoolean(),
-                root.GetProperty("Prototype").GetString(),
-                root.GetProperty("Path").GetString(),
-                root.GetProperty("Description").GetString(),
+                root.GetProperty("Prototype").GetString() ?? string.Empty,
+                root.GetProperty("Path").GetString() ?? string.Empty,
+                root.GetProperty("Description").GetString() ?? string.Empty,
                 GetValueBase(root.GetProperty("Value"), valueType)
             );
 
@@ -112,7 +113,9 @@ namespace MHServerEmu.Games.GameData.PatchManager
                 ValueType.Prototype => new SimpleValue<Prototype>(ParseJsonPrototype(jsonElement), valueType),
                 ValueType.PrototypeArray => new ArrayValue<Prototype>(jsonElement, valueType, ParseJsonPrototype),
                 ValueType.Vector3 => new SimpleValue<Vector3>(ParseJsonVector3(jsonElement), valueType),
-                ValueType.Properties => new SimpleValue<PropertyCollection>(ParseJsonProperties(jsonElement), valueType),
+                // Parsing properties requires GameDatabase.PropertyInfoTable + curve refs to be initialized.
+                // PatchManager loads PatchData very early during startup, so we store raw JSON and parse on demand.
+                ValueType.Properties => new RawJsonPropertiesValue(jsonElement.GetRawText()),
                 _ => throw new NotSupportedException($"Type {valueType} not support.")
             };
         }
@@ -166,16 +169,71 @@ namespace MHServerEmu.Games.GameData.PatchManager
             PropertyCollection properties = new ();
             var infoTable = GameDatabase.PropertyInfoTable;
 
+            if (infoTable == null)
+                throw new InvalidOperationException("ParseJsonProperties(): GameDatabase.PropertyInfoTable is null (PatchData loaded too early)");
+
             foreach (var property in jsonElement.EnumerateObject())
             {
                 var propEnum = (PropertyEnum)Enum.Parse(typeof(PropertyEnum), property.Name);
                 PropertyInfo propertyInfo = infoTable.LookupPropertyInfo(propEnum);
+
+                if (propertyInfo == null)
+                {
+                    Logger.Warn($"ParseJsonProperties(): Property info not found for {propEnum}, skipping");
+                    continue;
+                }
+
                 PropertyId propId = ParseJsonPropertyId(property.Value, propEnum, propertyInfo);
+
+                // Curve properties (e.g. EnduranceCost) are stored separately as CurveProperty values and
+                // need to be set using SetCurveProperty so the CurveId + index property are retained.
+                if (propertyInfo.IsCurveProperty)
+                {
+                    CurveId curveId = ParseJsonCurveId(property.Value, propertyInfo);
+                    PropertyId indexPropertyId = propertyInfo.DefaultCurveIndex;
+
+                    if (curveId == CurveId.Invalid)
+                        curveId = (CurveId)propertyInfo.DefaultValue;
+
+                    properties.SetCurveProperty(propId, curveId, indexPropertyId, propertyInfo, SetPropertyFlags.None, true);
+                    continue;
+                }
+
                 PropertyValue propValue = ParseJsonPropertyValue(property.Value, propertyInfo);
                 properties.SetProperty(propValue, propId);
             }
 
             return properties;
+        }
+
+        private static CurveId ParseJsonCurveId(JsonElement jsonElement, PropertyInfo propInfo)
+        {
+            // For properties with params, the JSON is expected to be: [param0, param1, ..., <curve>]
+            if (propInfo.ParamCount > 0)
+            {
+                var jsonArray = jsonElement.EnumerateArray().ToArray();
+                if (jsonArray.Length > 0)
+                    jsonElement = jsonArray[^1];
+            }
+
+            // Accept either a numeric CurveId (ulong) or a curve name string.
+            if (jsonElement.ValueKind == JsonValueKind.Number && jsonElement.TryGetUInt64(out ulong curveUlong))
+                return (CurveId)curveUlong;
+
+            if (jsonElement.ValueKind == JsonValueKind.String)
+            {
+                string curveName = jsonElement.GetString();
+                if (string.IsNullOrWhiteSpace(curveName) == false)
+                {
+                    // Some editors/users prefer quoting 64-bit ids to avoid precision issues.
+                    if (ulong.TryParse(curveName, out ulong curveUlongFromString))
+                        return (CurveId)curveUlongFromString;
+
+                    return GameDatabase.CurveRefManager.GetDataRefByName(curveName);
+                }
+            }
+
+            return CurveId.Invalid;
         }
 
         public static PropertyId ParseJsonPropertyId(JsonElement jsonElement, PropertyEnum propEnum, PropertyInfo propInfo)
@@ -197,8 +255,28 @@ namespace MHServerEmu.Games.GameData.PatchManager
                 switch (propInfo.GetParamType(i))
                 {
                     case PropertyParamType.Asset:
-                        var assetParam = (AssetId)ParseJsonElement(paramValue, typeof(AssetId));
-                        paramValues[i] = Property.ToParam(assetParam);
+                        // PatchData authors often use small ints for enum-like asset params (e.g. ManaType Type1 = 1).
+                        // Prefer interpreting small numeric values as enum values directly; otherwise treat as an AssetId.
+                        if (paramValue.ValueKind == JsonValueKind.Number && paramValue.TryGetUInt64(out ulong rawUlong))
+                        {
+                            if (rawUlong <= int.MaxValue)
+                                paramValues[i] = (PropertyParam)(int)rawUlong;
+                            else
+                                paramValues[i] = Property.ToParam((AssetId)rawUlong);
+                        }
+                        else if (paramValue.ValueKind == JsonValueKind.String)
+                        {
+                            string rawString = paramValue.GetString();
+                            if (int.TryParse(rawString, out int rawInt))
+                                paramValues[i] = (PropertyParam)rawInt;
+                            else if (ulong.TryParse(rawString, out ulong rawUlongFromString))
+                            {
+                                if (rawUlongFromString <= int.MaxValue)
+                                    paramValues[i] = (PropertyParam)(int)rawUlongFromString;
+                                else
+                                    paramValues[i] = Property.ToParam((AssetId)rawUlongFromString);
+                            }
+                        }
                         break;
 
                     case PropertyParamType.Prototype:
@@ -249,6 +327,10 @@ namespace MHServerEmu.Games.GameData.PatchManager
                 case PropertyDataType.Asset:
                     AssetId assetValue = (AssetId)ParseJsonElement(jsonElement, typeof(AssetId));
                     return (PropertyValue)assetValue;
+
+                // Curve properties are handled in ParseJsonProperties() via SetCurveProperty.
+                case PropertyDataType.Curve:
+                    throw new InvalidOperationException($"[ParseJsonPropertyValue] Curve properties must be set via SetCurveProperty. Property: {propInfo.PropertyName}");
 
                 default:
                     throw new InvalidOperationException($"[ParseJsonPropertyValue] Assignment into invalid property (property type is not int/float/bool)! Property: {propInfo.PropertyName}");
@@ -333,6 +415,35 @@ namespace MHServerEmu.Games.GameData.PatchManager
     {
         public abstract ValueType ValueType { get; }
         public abstract object GetValue();
+    }
+
+    public sealed class RawJsonPropertiesValue : ValueBase
+    {
+        public override ValueType ValueType => ValueType.Properties;
+
+        public string RawJson { get; }
+
+        private PropertyCollection _parsed;
+        private bool _hasParsed;
+
+        public RawJsonPropertiesValue(string rawJson)
+        {
+            RawJson = rawJson ?? "{}";
+        }
+
+        public override object GetValue()
+        {
+            if (_hasParsed)
+                return _parsed;
+
+            if (GameDatabase.PropertyInfoTable == null)
+                throw new InvalidOperationException("RawJsonPropertiesValue.GetValue(): PropertyInfoTable is not initialized yet");
+
+            using JsonDocument doc = JsonDocument.Parse(RawJson);
+            _parsed = PatchEntryConverter.ParseJsonProperties(doc.RootElement);
+            _hasParsed = true;
+            return _parsed;
+        }
     }
 
     public class SimpleValue<T> : ValueBase
