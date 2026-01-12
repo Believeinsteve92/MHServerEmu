@@ -1,0 +1,13 @@
+[
+  {
+    "Enabled": true,
+    "Prototype": "Powers/Player/CaptainAmerica/FuriousLunge.prototype",
+    "Path": "Properties",
+    "Description": "Apply EnduranceCost10.curve to Furious Lunge (Type1 mana) so it costs spirit like older versions.",
+    "ValueType": "Properties",
+    "Value": {
+      "EnduranceCost": [0, "Powers/Curves/EnduranceCosts/EnduranceCost10.curve"],
+      "EnduranceCostRequired": true
+    }
+  }
+]
