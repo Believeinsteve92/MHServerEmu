@@ -112,6 +112,8 @@ namespace MHServerEmu.Games.GameData.Calligraphy
             {
                 // Enumerate the asset type if there is no quick enum lookup for this assetId
                 AssetType assetType = GetAssetType(assetId);
+                if (assetType == null)
+                    return 0;
                 assetType.Enumerate();
 
                 // If there is still no lookup something must have gone wrong
