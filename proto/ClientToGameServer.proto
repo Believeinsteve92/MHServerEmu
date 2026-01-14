@@ -801,6 +801,12 @@ message NetMessageEnableTalentPower {
 	required uint64	prototypeId	= 2;
 	required bool	enable	= 3;
 	required uint32	spec	= 4;
+message NetMessageAssignPowerRank {
+	required uint64	avatarId	= 1;
+	required uint64	powerProtoId	= 2;
+	required uint32	powerSpec	= 3;
+}
+
 }
 
 message NetMessageStashInventoryViewed {
