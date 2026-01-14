@@ -2392,8 +2392,10 @@ namespace MHServerEmu.Games.Entities.Avatars
             if (GetPowerProgressionInfo(powerProtoRef, out PowerProgressionInfo powerInfo) == false)
                 return CanAssignPowerRankResult.GenericError;
 
-            // Check if power is in power progression (not a talent or mapped power)
-            if (powerInfo.IsInPowerProgression == false || powerInfo.IsTalent)
+            // Check if power is in power progression and is not a talent (SpecializationPowerPrototype)
+            // Powers must be in progression system (not mapped powers) and must not be talents
+            // Talents use SpecializationPowerPrototype and are toggled on/off, not ranked up
+            if (powerInfo.IsInPowerProgression == false || powerProtoRef.As<SpecializationPowerPrototype>() != null)
                 return CanAssignPowerRankResult.PowerNotInProgression;
 
             // Check level requirement
