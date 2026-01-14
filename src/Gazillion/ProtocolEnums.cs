@@ -206,6 +206,7 @@
         NetMessageRequestSocketAffix,
         NetMessageUISystemLockState,
         NetMessageEnableTalentPower,
+        NetMessageAssignPowerRank,
         NetMessageStashInventoryViewed,
         NetMessageStashCurrentlyOpen,
         NetMessageWidgetButtonResult,

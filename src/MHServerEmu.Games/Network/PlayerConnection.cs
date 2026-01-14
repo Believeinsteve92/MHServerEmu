@@ -572,6 +572,7 @@ namespace MHServerEmu.Games.Network
                 case ClientToGameServerMessage.NetMessageChangeCameraSettings:              OnChangeCameraSettings(message); break;             // 148
                 case ClientToGameServerMessage.NetMessageUISystemLockState:                 OnUISystemLockState(message); break;                // 150
                 case ClientToGameServerMessage.NetMessageEnableTalentPower:                 OnEnableTalentPower(message); break;                // 151
+                case ClientToGameServerMessage.NetMessageAssignPowerRank:                   OnAssignPowerRank(message); break;                  // 152 (NEW)
                 case ClientToGameServerMessage.NetMessageStashInventoryViewed:              OnStashInventoryViewed(message); break;             // 152
                 case ClientToGameServerMessage.NetMessageStashCurrentlyOpen:                OnStashCurrentlyOpen(message); break;               // 153
                 case ClientToGameServerMessage.NetMessageWidgetButtonResult:                OnWidgetButtonResult(message); break;               // 154
@@ -2279,7 +2280,32 @@ namespace MHServerEmu.Games.Network
             return true;
         }
 
-        private bool OnStashInventoryViewed(MailboxMessage message)   // 152
+        private bool OnAssignPowerRank(MailboxMessage message)    // 152 (NEW)
+        {
+            // TODO: Need to regenerate protobuf files to get NetMessageAssignPowerRank class
+            // For now, this is a placeholder implementation showing the intended logic
+            
+            // var assignPowerRank = message.As<NetMessageAssignPowerRank>();
+            // if (assignPowerRank == null) return Logger.WarnReturn(false, $"OnAssignPowerRank(): Failed to retrieve message");
+
+            // Avatar avatar = Game.EntityManager.GetEntity<Avatar>(assignPowerRank.AvatarId);
+            // if (avatar == null) return Logger.WarnReturn(false, "OnAssignPowerRank(): avatar == null");
+
+            // Player owner = avatar.GetOwnerOfType<Player>();
+            // if (owner != Player)
+            //     return Logger.WarnReturn(false, $"OnAssignPowerRank(): Player [{Player}] is attempting to assign power rank for avatar [{avatar}] that belongs to another player");
+
+            // PrototypeId powerProtoRef = (PrototypeId)assignPowerRank.PowerProtoId;
+            // int specIndex = (int)assignPowerRank.PowerSpec;
+
+            // if (avatar.CanAssignPowerRank(powerProtoRef, specIndex) != CanAssignPowerRankResult.Success)
+            //     return false;
+
+            // avatar.AssignPowerRank(powerProtoRef, specIndex);
+            return true;
+        }
+
+        private bool OnStashInventoryViewed(MailboxMessage message)   // 153
         {
             var stashInventoryViewed = message.As<NetMessageStashInventoryViewed>();
             if (stashInventoryViewed == null) return Logger.WarnReturn(false, $"OnStashInventoryViewed(): Failed to retrieve message");

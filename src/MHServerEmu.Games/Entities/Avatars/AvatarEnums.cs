@@ -65,6 +65,17 @@ namespace MHServerEmu.Games.Entities.Avatars
         GenericError
     }
 
+    public enum CanAssignPowerRankResult
+    {
+        Success,
+        InCombat,
+        LevelRequirement,
+        InsufficientPoints,
+        MaxRankReached,
+        PowerNotInProgression,
+        GenericError
+    }
+
     public enum CanSetInfinityRankResult
     {
         Success,
