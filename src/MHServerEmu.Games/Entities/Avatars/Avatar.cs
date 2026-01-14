@@ -2376,7 +2376,81 @@ namespace MHServerEmu.Games.Entities.Avatars
         }
 
         #endregion
+        
+        #region Power Ranks
 
+        /// <summary>
+        /// Checks if a power rank can be assigned to a power. Similar to talent validation.
+        /// </summary>
+        public CanAssignPowerRankResult CanAssignPowerRank(PrototypeId powerProtoRef, int specIndex)
+        {
+            // Check if avatar is in combat
+            if (Properties.HasProperty(PropertyEnum.IsInCombat))
+                return CanAssignPowerRankResult.InCombat;
+
+            // Get power progression info
+            if (GetPowerProgressionInfo(powerProtoRef, out PowerProgressionInfo powerInfo) == false)
+                return CanAssignPowerRankResult.GenericError;
+
+            // Check if power is in power progression (not a talent or mapped power)
+            if (powerInfo.IsInPowerProgression == false || powerInfo.IsTalent)
+                return CanAssignPowerRankResult.PowerNotInProgression;
+
+            // Check level requirement
+            if (CharacterLevel < powerInfo.GetRequiredLevel())
+                return CanAssignPowerRankResult.LevelRequirement;
+
+            // Get current and max ranks
+            int currentRank = GetPowerRankBase(powerProtoRef);
+            int maxRank = GetMaxPossibleRankForPowerAtCurrentLevel(ref powerInfo, specIndex);
+
+            // Check if power is already at max rank
+            if (currentRank >= maxRank)
+                return CanAssignPowerRankResult.MaxRankReached;
+
+            // TODO: Check if player has unspent power points
+            // This would require tracking available power points in player properties
+            // For now, we'll assume points are available
+
+            return CanAssignPowerRankResult.Success;
+        }
+
+        /// <summary>
+        /// Assigns (increases) a power rank for a power. Similar to AssignTalentPower.
+        /// </summary>
+        public bool AssignPowerRank(PrototypeId powerProtoRef, int specIndex)
+        {
+            if (powerProtoRef == PrototypeId.Invalid) 
+                return Logger.WarnReturn(false, "AssignPowerRank(): powerProtoRef == PrototypeId.Invalid");
+
+            // Get power progression info
+            if (GetPowerProgressionInfo(powerProtoRef, out PowerProgressionInfo powerInfo) == false)
+                return Logger.WarnReturn(false, "AssignPowerRank(): Failed to get power progression info");
+
+            // Validate the assignment
+            if (CanAssignPowerRank(powerProtoRef, specIndex) != CanAssignPowerRankResult.Success)
+                return Logger.WarnReturn(false, $"AssignPowerRank(): Cannot assign power rank for power {powerProtoRef.GetName()}");
+
+            // Get current rank and increase it
+            int currentRankBase = GetPowerRankBase(powerProtoRef);
+            int newRankBase = currentRankBase + 1;
+
+            // Set the new rank base
+            Properties[PropertyEnum.PowerRankBase, powerProtoRef] = newRankBase;
+
+            // Update the power rank to trigger recalculation and updates
+            if (UpdatePowerRank(ref powerInfo, false) == false)
+                return Logger.WarnReturn(false, $"AssignPowerRank(): Failed to update power rank for power {powerProtoRef.GetName()}");
+
+            // TODO: Deduct power points from player
+            // This would require tracking and decrementing available power points
+
+            Logger.Info($"AssignPowerRank(): Assigned rank {newRankBase} to power {powerProtoRef.GetName()} for avatar [{this}]");
+            return true;
+        }
+
+        #endregion
+        
         #region Mapped Powers (and Stolen Powers)
 
         public bool HasMappedPower(PrototypeId mappedPowerRef)
